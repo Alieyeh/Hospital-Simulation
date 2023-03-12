@@ -1,4 +1,4 @@
-from simulation.acutestrokeunit import AcuteStrokeUnit, Patient, Scenario
+from acutestrokeunit import AcuteStrokeUnit, Patient, Scenario
 import simpy
 import numpy as np
 
@@ -16,9 +16,9 @@ default_args = Scenario()
 model = AcuteStrokeUnit(env, default_args)
 
 # set up the process
-model.arrivals_generator()
-env.run(until=365)
-# model.run()
+# model.arrivals_generator()
+# env.run(until=365)
+model.run()
 print(f'end of run. simulation clock time = {env.now}')
 
 mt = [pt.time_to_bed for pt in model.patients]

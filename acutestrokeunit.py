@@ -7,7 +7,7 @@ import simpy
 import math
 from scipy.stats import t
 from joblib import Parallel, delayed
-from simulation.distributions import (Exponential, Lognormal, Bernoulli, Poisson)
+from distributions import (Exponential, Lognormal, Bernoulli, Poisson)
 
 # declare constants for module
 # default bed resources
@@ -185,7 +185,7 @@ class Patient:
         with self.beds.request() as req:
             yield req
 
-            trace(f'bed {self.identifier} at {self.env.now:.3f}')
+            # trace(f'bed {self.identifier} at {self.env.now:.3f}')
 
             # time to bed
             self.time_to_bed = self.env.now - arrival_time
@@ -234,6 +234,7 @@ class AcuteStrokeUnit:
         self.args = args
         self.init_model_resources(args)
         self.patients = []
+        self.patient_count = 0
 
     def init_model_resources(self, args):
         """
@@ -270,7 +271,9 @@ class AcuteStrokeUnit:
 
         """
         # set up the arrival process
-        self.env.process(self.arrivals_generator())
+        self.env.process(self.type1())
+        self.env.process(self.type2())
+        self.env.process(self.type3())
 
         # run
         self.env.run(until=results_collection_period + warm_up)
