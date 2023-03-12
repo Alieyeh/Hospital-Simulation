@@ -38,7 +38,7 @@ AUDIT_FIRST_OBS = 10
 AUDIT_OBS_INTERVAL = 5
 
 # default results collection period
-DEFAULT_RESULTS_COLLECTION_PERIOD = 365*5
+DEFAULT_RESULTS_COLLECTION_PERIOD = 365
 
 # default number of replications
 DEFAULT_N_REPS = 5
@@ -275,6 +275,48 @@ class AcuteStrokeUnit:
         # run
         self.env.run(until=results_collection_period + warm_up)
 
+    def type1(self):
+        while True:
+            inter_arrival_time = self.args.arrival_dist1.sample()
+            patient_type = 1
+            yield self.env.timeout(inter_arrival_time)
+            self.patient_count += 1
+            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
+            # create a new minor patient and pass in env and args
+            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
+            # keep a record of the patient for results calculation
+            self.patients.append(new_patient)
+            # init the minor injury process for this patient
+            self.env.process(new_patient.assessment())
+
+    def type2(self):
+        while True:
+            inter_arrival_time = self.args.arrival_dist2.sample()
+            patient_type = 2
+            yield self.env.timeout(inter_arrival_time)
+            self.patient_count += 1
+            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
+            # create a new minor patient and pass in env and args
+            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
+            # keep a record of the patient for results calculation
+            self.patients.append(new_patient)
+            # init the minor injury process for this patient
+            self.env.process(new_patient.assessment())
+
+    def type3(self):
+        while True:
+            inter_arrival_time = self.args.arrival_dist3.sample()
+            patient_type = 3
+            yield self.env.timeout(inter_arrival_time)
+            self.patient_count += 1
+            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
+            # create a new minor patient and pass in env and args
+            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
+            # keep a record of the patient for results calculation
+            self.patients.append(new_patient)
+            # init the minor injury process for this patient
+            self.env.process(new_patient.assessment())
+
     def arrivals_generator(self):
         """
         IAT is exponentially distributed
@@ -299,34 +341,37 @@ class AcuteStrokeUnit:
         #         day = [0]
         #     dist.append(random.sample(day, len(day)))
         # patient_count = 0
-        for patient_count in itertools.count(start=1):
+        # for patient_count in itertools.count(start=1):
         # for day in dist:
         #     for patient in day:
-            inter_arrival_time = np.nan
-            patient_type = 1
+        #     inter_arrival_time = np.nan
+        #     patient_type = 1
 
             # if patient != 0:
             #     patient_count = patient_count + 1
-            if patient_type == 1:
-                inter_arrival_time = self.args.arrival_dist1.sample()
-                patient_type = 1
-            elif patient_type == 2:
-                inter_arrival_time = self.args.arrival_dist2.sample()
-                patient_type = 2
-            elif patient_type == 3:
-                inter_arrival_time = self.args.arrival_dist3.sample()
-                patient_type = 3
-            print(inter_arrival_time)
-            yield self.env.timeout(inter_arrival_time)
-
-            trace(f'1. patient {patient_count}, type {patient_type} arrives at: {self.env.now:.3f}')
+            # if patient_type == 1:
+            #     inter_arrival_time = self.args.arrival_dist1.sample()
+            #     patient_type = 1
+            # elif patient_type == 2:
+            #     inter_arrival_time = self.args.arrival_dist2.sample()
+            #     patient_type = 2
+            # elif patient_type == 3:
+            #     inter_arrival_time = self.args.arrival_dist3.sample()
+            #     patient_type = 3
+            # print(inter_arrival_time)
+            # yield self.env.timeout(inter_arrival_time)
+            #
+            # trace(f'1. patient {patient_count}, type {patient_type} arrives at: {self.env.now:.3f}')
 
             # create a new minor patient and pass in env and args
-            new_patient = Patient(patient_count, patient_type, self.env, self.args)
+            # new_patient = Patient(patient_count, patient_type, self.env, self.args)
 
             # keep a record of the patient for results calculation
-            self.patients.append(new_patient)
+            # self.patients.append(new_patient)
 
             # init the minor injury process for this patient
-            self.env.process(new_patient.assessment())
+            # self.env.process(new_patient.assessment())
+        self.env.process(self.type1())
+        self.env.process(self.type2())
+        self.env.process(self.type3())
 
