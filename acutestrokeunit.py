@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import itertools
 import simpy
+import matplotlib.pyplot as plt
 import math
 from scipy.stats import t
 from joblib import Parallel, delayed
@@ -27,7 +28,7 @@ MEAN_STAY3 = 2.0
 STD_STAY3 = 2.5
 
 # Should we show a trace of simulated events?
-TRACE = True
+TRACE = False
 
 # default random number SET
 DEFAULT_RNG_SET = 1234
@@ -79,7 +80,7 @@ class Scenario:
 
         """
         # resource counts
-        self.beds = N_BEDS
+        self.n_beds = N_BEDS
 
         # warm-up
         self.warm_up = 0.0
@@ -164,9 +165,9 @@ class Patient:
         self.stay_dist3 = args.stay_dist3
 
         # individual patient metrics
+        self.arrival_time = 0.000
         self.stay_duration = 0.000
         self.time_to_bed = 0.000
-        self.time_to_stay = 0.000
         self.four_hour_target = 0
 
     def assessment(self):
@@ -179,16 +180,14 @@ class Patient:
 
         """
         # record the time that patient entered the system
-        arrival_time = self.env.now
+        self.arrival_time = self.env.now
 
         # request a bed
         with self.beds.request() as req:
             yield req
 
-            # trace(f'bed {self.identifier} at {self.env.now:.3f}')
-
             # time to bed
-            self.time_to_bed = self.env.now - arrival_time
+            self.time_to_bed = self.env.now - self.arrival_time
             self.waiting_complete()
 
             # sample stay duration.
@@ -220,7 +219,7 @@ class AcuteStrokeUnit:
     Model of ACU
     """
 
-    def __init__(self, env, args):
+    def __init__(self, args):
         """
 
         Params:
@@ -230,11 +229,17 @@ class AcuteStrokeUnit:
         args: Scenario
             container class for simulation model inputs.
         """
-        self.env = env
+        self.env = simpy.Environment()
         self.args = args
         self.init_model_resources(args)
+
         self.patients = []
         self.patient_count = 0
+        # self.wait_for_beds = 0.0
+        # self.beds_util = 0.0
+        # self.beds_queue = 0.0
+        # self.beds_time_used = 0.0
+        # self.target_ratio = 0
 
     def init_model_resources(self, args):
         """
@@ -245,8 +250,7 @@ class AcuteStrokeUnit:
         args - Scenario
             Simulation Parameter Container
         """
-        args.beds = simpy.Resource(self.env,
-                                   capacity=args.beds)
+        args.beds = simpy.Resource(self.env, capacity=args.n_beds)
 
     def run(self, results_collection_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
             warm_up=0):
@@ -378,3 +382,158 @@ class AcuteStrokeUnit:
         self.env.process(self.type2())
         self.env.process(self.type3())
 
+    def run_summary_frame(self):
+
+        # append to results df
+        pc = [i for i in range(1, self.patient_count+1)]
+        ty = [pt.type for pt in self.patients]
+        at = [pt.arrival_time for pt in self.patients]
+        wt = [pt.time_to_bed for pt in self.patients]
+        st = [pt.stay_duration for pt in self.patients]
+        ft = [pt.four_hour_target for pt in self.patients]
+
+        raw_df = pd.DataFrame({'patient_id': pc,
+                               'patient_type': ty,
+                               'arrival_time': at,
+                               'time_to_beds': wt,
+                               'stay_in_hospital': st,
+                               'four_hour_target': ft})
+        raw_df = raw_df[raw_df['arrival_time'] > self.args.warm_up]
+
+        # adjust util calculations for warmup period
+        rc_period = self.env.now - self.args.warm_up
+        util = np.sum(raw_df['stay_in_hospital']) / (rc_period * self.args.n_beds)
+        mean_waiting = np.mean(raw_df['time_to_beds'])
+        ratio = np.mean(raw_df['four_hour_target'])
+
+        df = pd.DataFrame({'1': {'time_to_beds': mean_waiting,
+                                 # 'beds_queue': self.operator_queue,
+                                 'beds_util': util,
+                                 'percentage': ratio}})
+        df = df.T
+        df.index.name = 'rep'
+        return df
+
+
+def single_run(scenario,
+               rc_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
+               warm_up=0,
+               random_no_set=DEFAULT_RNG_SET):
+    """
+    Perform a single run of the model and return the results
+
+    Parameters:
+    -----------
+
+    scenario: Scenario object
+        The scenario/parameters to run
+
+    rc_period: int
+        The length of the simulation run that collects results
+
+    warm_up: int, optional (default=0)
+        warm-up period in the model.  The model will not collect any results
+        before the warm-up period is reached.
+
+    random_no_set: int or None, optional (default=1)
+        Controls the set of random seeds used by the stochastic parts of the
+        model.  Set to different ints to get different results.  Set to None
+        for a random set of seeds.
+
+    Returns:
+    --------
+        pandas.DataFrame:
+        results from single run.
+    """
+
+    # set random number set - this controls sampling for the run.
+    scenario.set_random_no_set(random_no_set)
+
+    # create an instance of the model
+    model = AcuteStrokeUnit(scenario)
+
+    model.run(results_collection_period=rc_period, warm_up=warm_up)
+
+    # run the model
+    results_summary = model.run_summary_frame()
+
+    return results_summary
+
+
+def multiple_replications(scenario,
+                          rc_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
+                          warm_up=0,
+                          n_reps=DEFAULT_N_REPS,
+                          n_jobs=-1):
+    """
+    Perform multiple replications of the model.
+
+    Params:
+    ------
+    scenario: Scenario
+        Parameters/arguments to configure  the model
+
+    rc_period: float, optional (default=DEFAULT_RESULTS_COLLECTION_PERIOD)
+        results collection period.
+        the number of minutes to run the model beyond warm up
+        to collect results
+
+    warm_up: float, optional (default=0)
+        initial transient period.  no results are collected in this period
+
+    n_reps: int, optional (default=DEFAULT_N_REPS)
+        Number of independent replications to run.
+
+    n_jobs, int, optional (default=-1)
+        No. replications to run in parallel.
+
+    Returns:
+    --------
+    List
+    """
+    res = Parallel(n_jobs=n_jobs)(delayed(single_run)(scenario,
+                                                      rc_period,
+                                                      warm_up,
+                                                      random_no_set=rep)
+                                  for rep in range(n_reps))
+
+    # format and return results in a dataframe
+    df_results = pd.concat(res)
+    df_results.index = np.arange(1, len(df_results) + 1)
+    df_results.index.name = 'rep'
+    return df_results
+
+
+def time_series_inspection(results, warm_up=None):
+    """
+    Time series inspection method
+
+    Parameters:
+    ----------
+    results: dict
+        The dict of results taken from warmup_analysis
+    """
+
+    # create the 4 chart areas to plot
+    fig, ax = plt.subplots(2, 2, figsize=(12, 9))
+
+    # take the mean of the columns for each metric and plot
+    ax[0][0].plot(results['operator_wait'].mean(axis=1))
+    ax[0][1].plot(results['nurse_wait'].mean(axis=1))
+    ax[1][0].plot(results['operator_util'].mean(axis=1))
+    ax[1][1].plot(results['nurse_util'].mean(axis=1))
+
+    # set the label of each chart
+    ax[0][0].set_ylabel('operator_wait')
+    ax[0][1].set_ylabel('nurse_wait')
+    ax[1][0].set_ylabel('operator_util')
+    ax[1][1].set_ylabel('nurse_util')
+
+    if warm_up is not None:
+        # add warmup cut-off vertical line if one is specified
+        ax[0][0].axvline(x=warm_up, color='red', ls='--')
+        ax[0][1].axvline(x=warm_up, color='red', ls='--')
+        ax[1][0].axvline(x=warm_up, color='red', ls='--')
+        ax[1][1].axvline(x=warm_up, color='red', ls='--')
+
+    return fig, ax
