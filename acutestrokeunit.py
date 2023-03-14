@@ -1,5 +1,3 @@
-import random
-
 import numpy as np
 import pandas as pd
 import itertools
@@ -35,17 +33,17 @@ DEFAULT_RNG_SET = 1234
 N_STREAMS = 6
 
 # scheduled audit intervals in minutes.
-AUDIT_FIRST_OBS = 10
-AUDIT_OBS_INTERVAL = 5
+# AUDIT_FIRST_OBS = 10
+# AUDIT_OBS_INTERVAL = 5
 
 # default results collection period
-DEFAULT_RESULTS_COLLECTION_PERIOD = 365
+DEFAULT_RESULTS_COLLECTION_PERIOD = 450
 
 # default number of replications
 DEFAULT_N_REPS = 5
 
-# warmup auditing
-DEFAULT_WARMUP_AUDIT_INTERVAL = 120
+# warmup
+DEFAULT_WARMUP = 0
 
 
 def trace(msg):
@@ -83,7 +81,7 @@ class Scenario:
         self.n_beds = N_BEDS
 
         # warm-up
-        self.warm_up = 0.0
+        self.warm_up = DEFAULT_WARMUP
 
         # sampling
         self.random_number_set = random_number_set
@@ -235,11 +233,6 @@ class AcuteStrokeUnit:
 
         self.patients = []
         self.patient_count = 0
-        # self.wait_for_beds = 0.0
-        # self.beds_util = 0.0
-        # self.beds_queue = 0.0
-        # self.beds_time_used = 0.0
-        # self.target_ratio = 0
 
     def init_model_resources(self, args):
         """
@@ -253,7 +246,7 @@ class AcuteStrokeUnit:
         args.beds = simpy.Resource(self.env, capacity=args.n_beds)
 
     def run(self, results_collection_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
-            warm_up=0):
+            warm_up=DEFAULT_WARMUP):
         """
         Conduct a single run of the model in its current
         configuration
@@ -417,7 +410,7 @@ class AcuteStrokeUnit:
 
 def single_run(scenario,
                rc_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
-               warm_up=0,
+               warm_up=DEFAULT_WARMUP,
                random_no_set=DEFAULT_RNG_SET):
     """
     Perform a single run of the model and return the results
@@ -462,7 +455,7 @@ def single_run(scenario,
 
 def multiple_replications(scenario,
                           rc_period=DEFAULT_RESULTS_COLLECTION_PERIOD,
-                          warm_up=0,
+                          warm_up=DEFAULT_WARMUP,
                           n_reps=DEFAULT_N_REPS,
                           n_jobs=-1):
     """
@@ -504,6 +497,203 @@ def multiple_replications(scenario,
     return df_results
 
 
+class WarmupAuditor:
+    """
+    Warmup Auditor for the model.
+
+    Stores the cumulative means for:
+    1. operator waiting time
+    2. nurse waiting time
+    3. operator utilisation
+    4. nurse utilitsation.
+    """
+
+    def __init__(self, model, interval=DEFAULT_WARMUP):
+        self.env = model.env
+        self.model = model
+        self.interval = interval
+        self.wait_for_beds = []
+        self.beds_util = []
+
+    def run(self, rc_period):
+        """
+        Run the audited model
+
+        Parameters:
+        ----------
+        rc_period: float
+            Results collection period.  Typically this should be many times
+            longer than the expected results collection period.
+
+        Returns:
+        -------
+        None.
+        """
+        # set up data collection for warmup variables.
+        self.env.process(self.audit_model())
+        self.model.run(rc_period, 0)
+
+    def audit_model(self):
+        """
+        Audit the model at the specified intervals
+        """
+        for i in itertools.count():
+            yield self.env.timeout(self.interval)
+
+            # Performance metrics
+            # calculate the utilisation metrics
+            wait_for_beds = np.sum([pt.time_to_bed for pt in self.model.patients]) / \
+                         self.model.args.patient_count
+            util = np.sum([pt.stay_duration for pt in self.model.patients]) / \
+                (self.env.now * self.model.args.n_beds)
+
+            # store the metrics
+            self.wait_for_beds.append(wait_for_beds)
+            self.beds_util.append(util)
+
+    def summary_frame(self):
+        '''
+        Return the audit observations in a summary dataframe
+
+        Returns:
+        -------
+        pd.DataFrame
+        '''
+
+        df = pd.DataFrame([self.wait_for_operator,
+                           self.wait_for_nurse,
+                           self.operator_util,
+                           self.nurse_util]).T
+        df.columns = ['operator_wait', 'nurse_wait', 'operator_util',
+                      'nurse_util']
+
+        return df
+
+
+def warmup_single_run(scenario, rc_period,
+                      interval=DEFAULT_WARMUP_AUDIT_INTERVAL,
+                      random_no_set=DEFAULT_RNG_SET):
+    '''
+    Perform a single run of the model as part of the warm-up
+    analysis.
+
+    Parameters:
+    -----------
+
+    scenario: Scenario object
+        The scenario/paramaters to run
+
+    results_collection_period: int
+        The length of the simulation run that collects results
+
+    audit_interval: int, optional (default=60)
+        during between audits as the model runs.
+
+    Returns:
+    --------
+        Tuple:
+        (mean_time_in_system, mean_time_to_nurse, mean_time_to_triage,
+         four_hours)
+    '''
+    # set random number set - this controls sampling for the run.
+    scenario.set_random_no_set(random_no_set)
+
+    # create an instance of the model
+    model = UrgentCareCallCentre(scenario)
+
+    # create warm-up model auditor and run
+    audit_model = WarmupAuditor(model, interval)
+    audit_model.run(rc_period)
+
+    return audit_model.summary_frame()
+
+
+# example solution
+def warmup_analysis(scenario, rc_period, n_reps=DEFAULT_N_REPS,
+                    interval=DEFAULT_WARMUP_AUDIT_INTERVAL,
+                    n_jobs=-1):
+    '''
+    Conduct a warm-up analysis of key performance measures in the model.
+
+    The analysis runs multiple replications of the model.
+    In each replication a WarmupAuditor periodically takes observations
+    of the following metrics:
+
+    metrics included:
+    1. Operator waiting time
+    2. Nurse callback waiting time
+    3. Operator utilisation
+    4. Nurse utilisation
+
+    Params:
+    ------
+    scenario: Scenario
+        Parameters/arguments to configurethe model
+
+    rc_period: int
+        number of minutes to run the model in simulated time
+
+    n_reps: int, optional (default=5)
+        Number of independent replications to run.
+
+    n_jobs: int, optional (default=-1)
+        Number of processors for parallel running of replications
+
+    Returns:
+    --------
+    dict of pd.DataFrames where each dataframe related to a metric.
+    Each column of a dataframe represents a replication and each row
+    represents an observation.
+    '''
+    res = Parallel(n_jobs=n_jobs)(delayed(warmup_single_run)(scenario,
+                                                             rc_period,
+                                                             random_no_set=rep,
+                                                             interval=interval)
+                                  for rep in range(n_reps))
+
+    # format and return results
+    metrics = {'operator_wait': [],
+               'nurse_wait': [],
+               'operator_util': [],
+               'nurse_util': []}
+
+    # preprocess results of each replication
+    for rep in res:
+        metrics['operator_wait'].append(rep.operator_wait)
+        metrics['nurse_wait'].append(rep.nurse_wait)
+        metrics['operator_util'].append(rep.operator_util)
+        metrics['nurse_util'].append(rep.nurse_util)
+
+    # cast to dataframe
+    metrics['operator_wait'] = pd.DataFrame(metrics['operator_wait']).T
+    metrics['nurse_wait'] = pd.DataFrame(metrics['nurse_wait']).T
+    metrics['operator_util'] = pd.DataFrame(metrics['operator_util']).T
+    metrics['nurse_util'] = pd.DataFrame(metrics['nurse_util']).T
+
+    # index as obs number
+    metrics['operator_wait'].index = np.arange(1,
+                                               len(metrics['operator_wait']) + 1)
+    metrics['nurse_wait'].index = np.arange(1, len(metrics['nurse_wait']) + 1)
+    metrics['operator_util'].index = np.arange(1,
+                                               len(metrics['operator_util']) + 1)
+    metrics['nurse_util'].index = np.arange(1, len(metrics['nurse_util']) + 1)
+
+    # obs label
+    metrics['operator_wait'].index.name = "audit"
+    metrics['nurse_wait'].index.name = "audit"
+    metrics['operator_util'].index.name = "audit"
+    metrics['nurse_util'].index.name = "audit"
+
+    # columns as rep number
+    cols = [f'rep_{i}' for i in range(1, n_reps + 1)]
+    metrics['operator_wait'].columns = cols
+    metrics['nurse_wait'].columns = cols
+    metrics['operator_util'].columns = cols
+    metrics['nurse_util'].columns = cols
+
+    return metrics
+
+
 def time_series_inspection(results, warm_up=None):
     """
     Time series inspection method
@@ -515,25 +705,19 @@ def time_series_inspection(results, warm_up=None):
     """
 
     # create the 4 chart areas to plot
-    fig, ax = plt.subplots(2, 2, figsize=(12, 9))
+    fig, ax = plt.subplots(1, 2, figsize=(12, 9))
 
     # take the mean of the columns for each metric and plot
-    ax[0][0].plot(results['operator_wait'].mean(axis=1))
-    ax[0][1].plot(results['nurse_wait'].mean(axis=1))
-    ax[1][0].plot(results['operator_util'].mean(axis=1))
-    ax[1][1].plot(results['nurse_util'].mean(axis=1))
+    ax[0][0].plot(results['time_to_beds'].mean(axis=1))
+    ax[0][1].plot(results['beds_util'].mean(axis=1))
 
     # set the label of each chart
-    ax[0][0].set_ylabel('operator_wait')
-    ax[0][1].set_ylabel('nurse_wait')
-    ax[1][0].set_ylabel('operator_util')
-    ax[1][1].set_ylabel('nurse_util')
+    ax[0][0].set_ylabel('time_to_beds')
+    ax[0][1].set_ylabel('beds_util')
 
     if warm_up is not None:
         # add warmup cut-off vertical line if one is specified
         ax[0][0].axvline(x=warm_up, color='red', ls='--')
         ax[0][1].axvline(x=warm_up, color='red', ls='--')
-        ax[1][0].axvline(x=warm_up, color='red', ls='--')
-        ax[1][1].axvline(x=warm_up, color='red', ls='--')
 
     return fig, ax
