@@ -1,28 +1,33 @@
+import random
+
 import pandas as pd
 import acutestrokeunit
-# from acutestrokeunit import AcuteStrokeUnit, single_run, multiple_replications, Scenario
+from acutestrokeunit import AcuteStrokeUnit, multiple_replications, Scenario, warmup_analysis
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from paramdetection import confidence_interval_method, plot_confidence_interval_method, warmup_detection
 
 # Turn on tracing
-acutestrokeunit.TRACE = False
-acutestrokeunit.DEFAULT_RESULTS_COLLECTION_PERIOD = 400
-acutestrokeunit.DEFAULT_WARMUP = 0
+acutestrokeunit.DEFAULT_RESULTS_COLLECTION_PERIOD = 365*5
+acutestrokeunit.TRACE = True
+acutestrokeunit.DEFAULT_WARMUP = 250
+acutestrokeunit.DEFAULT_N_REPS = 100
 
 # base case scenario with default parameters
-default_args = acutestrokeunit.Scenario()
+default_args = Scenario()
 
 # create the model
-# model = acutestrokeunit.AcuteStrokeUnit(default_args)
+# model = AcuteStrokeUnit(default_args)
 
 # set up the process
 # model.run()
 # results = model.run_summary_frame()
-# results = acutestrokeunit.single_run(default_args)
-results = acutestrokeunit.multiple_replications(default_args)
-print(results['time_to_beds'].mean(axis=1))
-# acutestrokeunit.time_series_inspection(results, warm_up=120)
+# results = single_run(default_args)
+# results = multiple_replications(default_args)
+# print(results)
+# print(results['time_to_beds'].mean(axis=1))
+# time_series_inspection(results, warm_up=120)
 
 # print(f'end of run. simulation clock time = {env.now}')
 #
@@ -30,4 +35,30 @@ print(results['time_to_beds'].mean(axis=1))
 # print(np.mean(mt))
 # at = [pt.four_hour_target for pt in model.patients]
 # print(np.mean(at))
+# run for 40 days
+# RUN_LENGTH = 365*5
 
+# run at least 5 replications, but more might be needed for noisy data
+# N_REPS = 20
+
+# get warmup period
+# results = warmup_analysis(default_args)
+
+# warmup_detection(results, warm_up=100)
+# plt.show()
+
+# assume 50*5 as warmup
+replications = multiple_replications(default_args)
+print(replications)
+n_reps, conf_ints = confidence_interval_method(replications['beds_util'].to_numpy() * 100,
+                                               desired_precision=0.05, min_rep=50)
+
+print('Analysis of replications for operator utilisation...')
+
+# print out the min number of replications to achieve precision
+print(f'\nminimum number of reps for 5% precision: {n_reps}\n')
+
+# plot the confidence intervals
+ax = plot_confidence_interval_method(n_reps, conf_ints,
+                                     metric_name='beds_util')
+plt.show()
