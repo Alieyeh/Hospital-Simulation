@@ -184,31 +184,3 @@ class Lognormal:
         """
         return self.rand.lognormal(self.mu, self.sigma, size=size)
 
-
-class Discrete(Distribution):
-    """
-    Encapsulates a discrete distribution
-    """
-    def __init__(self, elements, probabilities, random_seed=None):
-        self.elements = elements
-        self.probabilities = probabilities
-        
-        self.validate_lengths(elements, probabilities)
-        self.validate_probs(probabilities)
-        
-        self.cum_probs = np.add.accumulate(probabilities)
-        
-        self.rng = np.random.default_rng(random_seed)
-
-    def validate_lengths(self, elements, probs):
-        if (len(elements) != len(probs)):
-            raise ValueError('Elements and probability arguments must be of the same length')
-            
-    def validate_probs(self, probs):
-        if not math.isclose(sum(probs), 1.0):
-            raise ValueError('Probabilities must sum to 1')
-        
-    def sample(self, size=None):
-        return self.elements[np.digitize(self.rng.random(size), self.cum_probs)]
-
-    

@@ -10,12 +10,9 @@ from distributions import (Exponential, Lognormal)
 N_BEDS = 9
 
 # default parameters for inter-arrival times distributions (days)
-# MEAN_IAT1 = 1.2
-# MEAN_IAT2 = 9.5
-# MEAN_IAT3 = 3.5
-MEAN_IAT1 = 1.09
-MEAN_IAT2 = 8.64
-MEAN_IAT3 = 3.18
+MEAN_IAT1 = 1.2
+MEAN_IAT2 = 9.5
+MEAN_IAT3 = 3.5
 
 # default parameters for stay length distributions
 MEAN_STAY1 = 7.4
@@ -29,7 +26,7 @@ STD_STAY3 = 2.5
 TRACE = False
 
 # default random number SET
-DEFAULT_RNG_SET = 42
+DEFAULT_RNG_SET = 1234
 N_STREAMS = 6
 
 # scheduled audit intervals in minutes.
@@ -37,16 +34,19 @@ N_STREAMS = 6
 # AUDIT_OBS_INTERVAL = 5
 
 # default results collection period
-DEFAULT_RESULTS_COLLECTION_PERIOD = 365
+DEFAULT_RESULTS_COLLECTION_PERIOD = 365*5
 
 # default number of replications
-DEFAULT_N_REPS = 51
+DEFAULT_N_REPS = 10
 
 # warmup
-DEFAULT_WARMUP = 50*5
+DEFAULT_WARMUP = 0
 
 # warmup auditing
 DEFAULT_WARMUP_AUDIT_INTERVAL = 5
+
+# accepting patient by priority?
+PRIORITY = False
 
 
 def trace(msg):
@@ -82,6 +82,12 @@ class Scenario:
         """
         # resource counts
         self.n_beds = N_BEDS
+        self.prior = PRIORITY
+
+        # inter-arrival rate
+        self.mean_iat1 = MEAN_IAT1
+        self.mean_iat2 = MEAN_IAT2
+        self.mean_iat3 = MEAN_IAT3
 
         # warm-up
         self.warm_up = DEFAULT_WARMUP
@@ -116,9 +122,9 @@ class Scenario:
         self.seeds = rng_streams.integers(0, 999999999, size=N_STREAMS)
 
         # create inter-arrival distributions
-        self.arrival_dist1 = Exponential(MEAN_IAT1, random_seed=self.seeds[0])
-        self.arrival_dist2 = Exponential(MEAN_IAT2, random_seed=self.seeds[1])
-        self.arrival_dist3 = Exponential(MEAN_IAT3, random_seed=self.seeds[2])
+        self.arrival_dist1 = Exponential(self.mean_iat1, random_seed=self.seeds[0])
+        self.arrival_dist2 = Exponential(self.mean_iat2, random_seed=self.seeds[1])
+        self.arrival_dist3 = Exponential(self.mean_iat3, random_seed=self.seeds[2])
 
         # create study length distributions
         self.stay_dist1 = Lognormal(MEAN_STAY1, STD_STAY1, random_seed=self.seeds[3])
@@ -155,6 +161,7 @@ class Patient:
         self.env = env
 
         # triage parameters
+        self.args = args
         self.beds = args.beds
 
         # stay length distributions
@@ -181,7 +188,11 @@ class Patient:
         self.arrival_time = self.env.now
 
         # request a bed
-        with self.beds.request() as req:
+        pri = None
+        if self.args.prior:
+            pri = self.type
+
+        with self.beds.request(priority=pri) as req:
             yield req
 
             # time to bed
@@ -242,7 +253,8 @@ class AcuteStrokeUnit:
         args - Scenario
             Simulation Parameter Container
         """
-        args.beds = simpy.Resource(self.env, capacity=args.n_beds)
+        args.beds = simpy.PriorityResource(self.env, capacity=args.n_beds)
+
 
     def run(self):
         """
@@ -325,11 +337,9 @@ class AcuteStrokeUnit:
         # adjust util calculations for warmup period
         rc_period = self.env.now - self.args.warm_up
         util = np.sum(raw_df['stay_in_hospital']) / (rc_period * self.args.n_beds)
-        mean_waiting = np.mean(raw_df['time_to_beds'])
         ratio = np.mean(raw_df['four_hour_target'])
 
-        df = pd.DataFrame({'1': {'time_to_beds': mean_waiting,
-                                 # 'beds_queue': self.operator_queue,
+        df = pd.DataFrame({'1': {# 'beds_queue': self.operator_queue,
                                  'beds_util': util,
                                  'percentage': ratio}})
         df = df.T
@@ -465,15 +475,12 @@ class WarmupAuditor:
 
             # Performance metrics
             # calculate the utilisation metrics
-            wait_for_beds = sum([pt.time_to_bed for pt in self.model.patients]) / \
-                len([pt.time_to_bed for pt in self.model.patients])
             util = sum([pt.stay_duration for pt in self.model.patients]) / \
                 (self.env.now * self.model.args.n_beds)
             ratio = sum([pt.four_hour_target for pt in self.model.patients]) / \
                 len([pt.four_hour_target for pt in self.model.patients])
 
             # store the metrics
-            self.wait_for_beds.append(wait_for_beds)
             self.beds_util.append(util)
             self.percentage.append(ratio)
 
@@ -486,8 +493,7 @@ class WarmupAuditor:
         pd.DataFrame
         """
 
-        df = pd.DataFrame([self.wait_for_beds,
-                           self.beds_util,
+        df = pd.DataFrame([self.beds_util,
                            self.percentage]).T
         df.columns = ['beds_wait', 'beds_util', 'percentage']
 
@@ -572,34 +578,28 @@ def warmup_analysis(scenario,
                                   for rep in range(DEFAULT_N_REPS))
 
     # format and return results
-    metrics = {'beds_wait': [],
-               'beds_util': [],
+    metrics = {'beds_util': [],
                'percentage': []}
 
     # preprocess results of each replication
     for rep in res:
-        metrics['beds_wait'].append(rep.beds_wait)
         metrics['beds_util'].append(rep.beds_util)
         metrics['percentage'].append(rep.percentage)
 
     # cast to dataframe
-    metrics['beds_wait'] = pd.DataFrame(metrics['beds_wait']).T
     metrics['beds_util'] = pd.DataFrame(metrics['beds_util']).T
     metrics['percentage'] = pd.DataFrame(metrics['percentage']).T
 
     # index as obs number
-    metrics['beds_wait'].index = np.arange(1, len(metrics['beds_wait']) + 1)
     metrics['beds_util'].index = np.arange(1, len(metrics['beds_util']) + 1)
     metrics['percentage'].index = np.arange(1, len(metrics['percentage']) + 1)
 
     # obs label
-    metrics['beds_wait'].index.name = "audit"
     metrics['beds_util'].index.name = "audit"
     metrics['percentage'].index.name = "audit"
 
     # columns as rep number
     cols = [f'rep_{i}' for i in range(1, DEFAULT_N_REPS + 1)]
-    metrics['beds_wait'].columns = cols
     metrics['beds_util'].columns = cols
     metrics['percentage'].columns = cols
 
@@ -617,46 +617,70 @@ def get_scenarios(n_beds, admission_increase):
     dict
         Contains the scenarios for the model
     """
-    scenarios = {}
-    scenarios['base'] = Scenario()
+    scenarios = {'base': Scenario()}
 
     for n in n_beds:
-        scenarios[f'bed_{n}'] = Scenario()
-        scenarios[f'bed_{n}'].n_beds = n
-
-    scenarios['nurse+1'] = Scenario()
-    scenarios['nurse+1'].n_nurses += 1
-
-    scenarios['operator+nurse'] = Scenario()
-    scenarios['operator+nurse'].n_operators += 1
-    scenarios['operator+nurse'].n_nurses += 1
-
-    #######################################################
+        for rate in admission_increase:
+            scenarios[f'bed_{n} with {rate*100}% increase admission'] = Scenario()
+            scenarios[f'bed_{n} with {rate*100}% increase admission'].n_beds = n
+            scenarios[f'bed_{n} with {rate*100}% increase admission'].mean_iat1 /= (1 + rate)
+            scenarios[f'bed_{n} with {rate*100}% increase admission'].mean_iat2 /= (1 + rate)
+            scenarios[f'bed_{n} with {rate*100}% increase admission'].mean_iat3 /= (1 + rate)
 
     return scenarios
 
 
-def run_scenario_analysis(scenarios, rc_period, warm_up, n_reps):
-    '''
+def run_scenario_analysis(scenarios):
+    """
     Run each of the scenarios for a specified results
     collection period, warmup and replications.
-
-    (note if you have lots of scenarios this may take several minutes)
-    '''
-    print('Scenario Analysis')
-    print(f'No. Scenario: {len(scenarios)}')
-    print(f'Replicatins: {n_reps}')
+    """
 
     scenario_results = {}
     for sc_name, scenario in scenarios.items():
-        print(f'Running {sc_name}', end=' => ')
-        replications = multiple_replications(scenario, rc_period=RC_PERIOD,
-                                             warm_up=warm_up,
-                                             n_reps=n_reps)
-        print('done.\n')
+        replications = multiple_replications(scenario)
 
         # save the results
         scenario_results[sc_name] = replications
 
     print('Scenario analysis complete.')
     return scenario_results
+
+
+def scenario_summary_frame(scenario_results):
+    """
+    Mean results for each performance measure by scenario
+
+    Parameters:
+    ----------
+    scenario_results: dict
+        dictionary of replications.
+        Key identifies the performance measure
+
+    Returns:
+    -------
+    pd.DataFrame
+    """
+    columns = []
+    summary = pd.DataFrame()
+    for sc_name, replications in scenario_results.items():
+        # calculate mean
+        mean = replications.mean()
+
+        # calculate se
+        se = replications.sem()
+
+        # calculate 95%CI
+        upper = mean + 1.96*se
+        upper = upper.add_prefix('upper_')
+        lower = mean - 1.96*se
+        lower = lower.add_prefix('lower_')
+        mean = mean.add_prefix("mean_")
+
+        # combine them into one dataframe
+        stats = pd.concat([mean, upper, lower], axis=0)
+        summary = pd.concat([summary, stats], axis=1)
+        columns.append(sc_name)
+
+    summary.columns = columns
+    return summary
