@@ -2,19 +2,20 @@ import numpy as np
 import pandas as pd
 import itertools
 import simpy
-import matplotlib.pyplot as plt
-
 from joblib import Parallel, delayed
-from distributions import (Exponential, Lognormal, Bernoulli, Poisson)
+from distributions import (Exponential, Lognormal)
 
 # declare constants for module
 # default bed resources
 N_BEDS = 9
 
 # default parameters for inter-arrival times distributions (days)
-MEAN_IAT1 = 1.2
-MEAN_IAT2 = 9.5
-MEAN_IAT3 = 3.5
+# MEAN_IAT1 = 1.2
+# MEAN_IAT2 = 9.5
+# MEAN_IAT3 = 3.5
+MEAN_IAT1 = 1.09
+MEAN_IAT2 = 8.64
+MEAN_IAT3 = 3.18
 
 # default parameters for stay length distributions
 MEAN_STAY1 = 7.4
@@ -28,7 +29,7 @@ STD_STAY3 = 2.5
 TRACE = False
 
 # default random number SET
-DEFAULT_RNG_SET = 1234
+DEFAULT_RNG_SET = 42
 N_STREAMS = 6
 
 # scheduled audit intervals in minutes.
@@ -39,10 +40,10 @@ N_STREAMS = 6
 DEFAULT_RESULTS_COLLECTION_PERIOD = 365
 
 # default number of replications
-DEFAULT_N_REPS = 180
+DEFAULT_N_REPS = 51
 
 # warmup
-DEFAULT_WARMUP = 0
+DEFAULT_WARMUP = 50*5
 
 # warmup auditing
 DEFAULT_WARMUP_AUDIT_INTERVAL = 5
@@ -155,12 +156,6 @@ class Patient:
 
         # triage parameters
         self.beds = args.beds
-        # self.triage_dist = args.triage_dist
-
-        # inter-arrival distributions
-        self.arrival_dist1 = args.arrival_dist1
-        self.arrival_dist2 = args.arrival_dist2
-        self.arrival_dist3 = args.arrival_dist3
 
         # stay length distributions
         self.stay_dist1 = args.stay_dist1
@@ -191,6 +186,8 @@ class Patient:
 
             # time to bed
             self.time_to_bed = self.env.now - self.arrival_time
+            if 0 <= self.time_to_bed <= 1/6:
+                self.four_hour_target = 1
             self.waiting_complete()
 
             # sample stay duration.
@@ -204,9 +201,6 @@ class Patient:
             yield self.env.timeout(self.stay_duration)
 
             self.treatment_complete()
-
-            if self.time_to_bed <= 1/6:
-                self.four_hour_target = 1
 
     def waiting_complete(self):
         trace(f'2. patient {self.identifier}, type {self.type} waiting for bed ended {self.env.now:.3f}; '
@@ -279,105 +273,36 @@ class AcuteStrokeUnit:
         # run
         self.env.run(until=self.args.run_length + self.args.warm_up)
 
+    def generate_new_arrival(self, patient_type):
+        self.patient_count += 1
+        trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
+        # create a new minor patient and pass in env and args
+        new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
+        # keep a record of the patient for results calculation
+        self.patients.append(new_patient)
+        # init the minor injury process for this patient
+        self.env.process(new_patient.assessment())
+
     def type1(self):
         while True:
             inter_arrival_time = self.args.arrival_dist1.sample()
             patient_type = 1
             yield self.env.timeout(inter_arrival_time)
-            self.patient_count += 1
-            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
-            # create a new minor patient and pass in env and args
-            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
-            # keep a record of the patient for results calculation
-            self.patients.append(new_patient)
-            # init the minor injury process for this patient
-            self.env.process(new_patient.assessment())
+            self.generate_new_arrival(patient_type)
 
     def type2(self):
         while True:
             inter_arrival_time = self.args.arrival_dist2.sample()
             patient_type = 2
             yield self.env.timeout(inter_arrival_time)
-            self.patient_count += 1
-            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
-            # create a new minor patient and pass in env and args
-            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
-            # keep a record of the patient for results calculation
-            self.patients.append(new_patient)
-            # init the minor injury process for this patient
-            self.env.process(new_patient.assessment())
+            self.generate_new_arrival(patient_type)
 
     def type3(self):
         while True:
             inter_arrival_time = self.args.arrival_dist3.sample()
             patient_type = 3
             yield self.env.timeout(inter_arrival_time)
-            self.patient_count += 1
-            trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
-            # create a new minor patient and pass in env and args
-            new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
-            # keep a record of the patient for results calculation
-            self.patients.append(new_patient)
-            # init the minor injury process for this patient
-            self.env.process(new_patient.assessment())
-
-    def arrivals_generator(self):
-        """
-        IAT is exponentially distributed
-
-        Parameters:
-        ------
-        env: simpy.Environment
-
-        args: Scenario
-            Container class for model data inputs
-        """
-        # type1_dist = Poisson(1 / MEAN_IAT1, 1234).sample(DEFAULT_RESULTS_COLLECTION_PERIOD)
-        # type2_dist = Poisson(1 / MEAN_IAT2, 1234).sample(DEFAULT_RESULTS_COLLECTION_PERIOD)
-        # type3_dist = Poisson(1 / MEAN_IAT3, 1234).sample(DEFAULT_RESULTS_COLLECTION_PERIOD)
-        # dist = []
-        # for i, j, k in zip(type1_dist, type2_dist, type3_dist):
-        #     type_1 = np.ones(i)
-        #     type_2 = np.ones(j) * 2
-        #     type_3 = np.ones(k) * 3
-        #     day = list(np.concatenate((type_1, type_2, type_3), axis=0))
-        #     if len(day) == 0:
-        #         day = [0]
-        #     dist.append(random.sample(day, len(day)))
-        # patient_count = 0
-        # for patient_count in itertools.count(start=1):
-        # for day in dist:
-        #     for patient in day:
-        #     inter_arrival_time = np.nan
-        #     patient_type = 1
-
-            # if patient != 0:
-            #     patient_count = patient_count + 1
-            # if patient_type == 1:
-            #     inter_arrival_time = self.args.arrival_dist1.sample()
-            #     patient_type = 1
-            # elif patient_type == 2:
-            #     inter_arrival_time = self.args.arrival_dist2.sample()
-            #     patient_type = 2
-            # elif patient_type == 3:
-            #     inter_arrival_time = self.args.arrival_dist3.sample()
-            #     patient_type = 3
-            # print(inter_arrival_time)
-            # yield self.env.timeout(inter_arrival_time)
-            #
-            # trace(f'1. patient {patient_count}, type {patient_type} arrives at: {self.env.now:.3f}')
-
-            # create a new minor patient and pass in env and args
-            # new_patient = Patient(patient_count, patient_type, self.env, self.args)
-
-            # keep a record of the patient for results calculation
-            # self.patients.append(new_patient)
-
-            # init the minor injury process for this patient
-            # self.env.process(new_patient.assessment())
-        self.env.process(self.type1())
-        self.env.process(self.type2())
-        self.env.process(self.type3())
+            self.generate_new_arrival(patient_type)
 
     def run_summary_frame(self):
 
@@ -395,7 +320,7 @@ class AcuteStrokeUnit:
                                'time_to_beds': wt,
                                'stay_in_hospital': st,
                                'four_hour_target': ft})
-        raw_df = raw_df[raw_df['arrival_time'] > self.args.warm_up]
+        raw_df = raw_df[raw_df['arrival_time'] >= self.args.warm_up]
 
         # adjust util calculations for warmup period
         rc_period = self.env.now - self.args.warm_up
@@ -681,3 +606,57 @@ def warmup_analysis(scenario,
     return metrics
 
 
+# example answer
+def get_scenarios(n_beds, admission_increase):
+    """
+    Creates a dictionary object containing
+    objects of type `Scenario` to run.
+
+    Returns:
+    --------
+    dict
+        Contains the scenarios for the model
+    """
+    scenarios = {}
+    scenarios['base'] = Scenario()
+
+    for n in n_beds:
+        scenarios[f'bed_{n}'] = Scenario()
+        scenarios[f'bed_{n}'].n_beds = n
+
+    scenarios['nurse+1'] = Scenario()
+    scenarios['nurse+1'].n_nurses += 1
+
+    scenarios['operator+nurse'] = Scenario()
+    scenarios['operator+nurse'].n_operators += 1
+    scenarios['operator+nurse'].n_nurses += 1
+
+    #######################################################
+
+    return scenarios
+
+
+def run_scenario_analysis(scenarios, rc_period, warm_up, n_reps):
+    '''
+    Run each of the scenarios for a specified results
+    collection period, warmup and replications.
+
+    (note if you have lots of scenarios this may take several minutes)
+    '''
+    print('Scenario Analysis')
+    print(f'No. Scenario: {len(scenarios)}')
+    print(f'Replicatins: {n_reps}')
+
+    scenario_results = {}
+    for sc_name, scenario in scenarios.items():
+        print(f'Running {sc_name}', end=' => ')
+        replications = multiple_replications(scenario, rc_period=RC_PERIOD,
+                                             warm_up=warm_up,
+                                             n_reps=n_reps)
+        print('done.\n')
+
+        # save the results
+        scenario_results[sc_name] = replications
+
+    print('Scenario analysis complete.')
+    return scenario_results

@@ -1,10 +1,8 @@
 """
 xxxxxx
 """
-import itertools
 import matplotlib.pyplot as plt
 import numpy as np
-import math
 from scipy.stats import t
 import pandas as pd
 import warnings
@@ -49,27 +47,31 @@ def randomization_test(results):
     results: pd.Dataframe
         The dataframe of results taken from warmup_analysis
     """
-    rep_mean = list(results.mean(axis=1))
-    temp = [rep_mean]
-    for n_rand in range(10000):
-        aa = random.sample(rep_mean, len(rep_mean))
-        temp.append(aa)
+    warnup_period = []
+    for col in results:
+        rep_mean = list(results[col].mean(axis=1))
+        temp = [rep_mean]
+        for n_rand in range(10000):
+            rand = random.sample(rep_mean, len(rep_mean))
+            temp.append(rand)
 
-    for i in range(1, 51):
-        arr1 = np.mean(np.array(temp)[:, :i], axis=1)
-        arr2 = np.mean(np.array(temp)[:, i:], axis=1)
-        diff = arr2 - arr1
-        observed_diff = diff[0]
-        count = 0
-        for j in diff[1:]:
-            if j >= observed_diff:
-                count += 1
-        pvalue = count / 10000
+        for batch in range(1, 51):
+            arr1 = np.mean(np.array(temp)[:, :batch], axis=1)
+            arr2 = np.mean(np.array(temp)[:, batch:], axis=1)
+            diff = arr2 - arr1
+            observed_diff = diff[0]
+            count = 0
+            for rand_diff in diff[1:]:
+                if rand_diff >= observed_diff:
+                    count += 1
+            p = count / 10000
 
-        if pvalue >= 0.05:
-            break
+            if p >= 0.05:
+                break
+        warnup_period.append(batch)
+        print(f"The warmup period for {col} is {batch}")
 
-        return i, diff
+    return warnup_period
 
 
 def confidence_interval_method(replications, alpha=0.05, desired_precision=0.05,
@@ -114,12 +116,12 @@ def confidence_interval_method(replications, alpha=0.05, desired_precision=0.05,
     cumulative_mean = [replications[0]]
     running_var = [0.0]
     for i in range(1, n):
-        cumulative_mean.append(cumulative_mean[i - 1] + \
+        cumulative_mean.append(cumulative_mean[i - 1] +
                                (replications[i] - cumulative_mean[i - 1]) / (i + 1))
 
         # running biased variance
         running_var.append(running_var[i - 1] + (replications[i]
-                                                 - cumulative_mean[i - 1]) \
+                                                 - cumulative_mean[i - 1])
                            * (replications[i] - cumulative_mean[i]))
 
     # unbiased std dev = running_var / (n - 1)
@@ -160,7 +162,7 @@ def confidence_interval_method(replications, alpha=0.05, desired_precision=0.05,
         warnings.warn(message)
         n_reps = -1
 
-    return n_reps, results.round(2)
+    return n_reps, results.round(decimal_place)
 
 
 def plot_confidence_interval_method(n_reps, conf_ints, metric_name):
