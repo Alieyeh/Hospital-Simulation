@@ -190,7 +190,6 @@ class Patient:
         1. request and wait for a bed
         2. treatment
         3. exit system
-
         """
         # record the time that patient entered the system
         self.arrival_time = self.env.now
@@ -240,16 +239,13 @@ class Patient:
 
 class AcuteStrokeUnit:
     """
-    Model of ACU
+    Main class to simulate the working of an acute stroke unit.
     """
 
     def __init__(self, args):
         """
-
         Params:
         -------
-        env: simpy.Environment
-
         args: Scenario
             container class for simulation model inputs.
         """
@@ -274,23 +270,7 @@ class AcuteStrokeUnit:
     def run(self):
         """
         Conduct a single run of the model in its current
-        configuration
-
-        run length = results_collection_period + warm_up
-
-        Parameters:
-        ----------
-        results_collection_period, float, optional
-            default = DEFAULT_RESULTS_COLLECTION_PERIOD
-
-        warm_up, float, optional (default=0)
-            length of initial transient period to truncate
-            from results.
-
-        Returns:
-        --------
-            None
-
+        configuration.
         """
         # set up the arrival process
         self.env.process(self.type1())
@@ -301,38 +281,70 @@ class AcuteStrokeUnit:
         self.env.run(until=self.args.run_length + self.args.warm_up)
 
     def generate_new_arrival(self, patient_type):
+        """
+        Create new patients.
+
+        Params:
+        --------
+        patient_type: int
+            stroke type (1-Acute strokes, 2-TIA, 3-Complex Neurological)
+        """
         self.patient_count += 1
         trace(f"1. patient {self.patient_count}, type {patient_type} arrive at{self.env.now: 3f}")
-        # create a new minor patient and pass in env and args
+        # create a new patient and pass in env and args
         new_patient = Patient(self.patient_count, patient_type, self.env, self.args)
         # keep a record of the patient for results calculation
         self.patients.append(new_patient)
-        # init the minor injury process for this patient
+        # init the ACU process for this patient
         self.env.process(new_patient.assessment())
 
     def type1(self):
+        """
+        Patient with type1 stroke (acute stroke),
+        IAT is exponentially distributed
+        """
         while True:
+            # sampling inter-arrival time
             inter_arrival_time = self.args.arrival_dist1.sample()
             patient_type = 1
             yield self.env.timeout(inter_arrival_time)
             self.generate_new_arrival(patient_type)
 
     def type2(self):
+        """
+        Patient with type2 stroke (Transient Ischaemic Attack (TIA)),
+        IAT is exponentially distributed
+        """
         while True:
+            # sampling inter-arrival time
             inter_arrival_time = self.args.arrival_dist2.sample()
             patient_type = 2
             yield self.env.timeout(inter_arrival_time)
             self.generate_new_arrival(patient_type)
 
     def type3(self):
+        """
+        Patient with type2 stroke (Complex Neurological),
+        IAT is exponentially distributed
+        """
         while True:
+            # sampling inter-arrival time
             inter_arrival_time = self.args.arrival_dist3.sample()
             patient_type = 3
             yield self.env.timeout(inter_arrival_time)
             self.generate_new_arrival(patient_type)
 
     def raw_summary(self):
+        """
+        Store raw summary data per patient
+        including patient_id, patient_type,
+        arrival_time, time_to_beds,
+        stay_in_hospital, and four_hour_target.
 
+        Returns:
+        --------
+          raw_df: pandas.DataFrame
+        """
         # append to results df
         pc = [i for i in range(1, self.patient_count+1)]
         ty = [pt.type for pt in self.patients]
@@ -351,6 +363,14 @@ class AcuteStrokeUnit:
         return raw_df
 
     def run_summary_frame(self):
+        """
+        Store summary performance data
+        including beds_util and percentage.
+
+        Returns:
+        --------
+          sum_df: pandas.DataFrame
+        """
         raw_df = self.raw_summary()
         # adjust util calculations for warmup period
         rc_period = self.env.now - self.args.warm_up
@@ -375,13 +395,6 @@ def single_run(scenario,
     scenario: Scenario object
         The scenario/parameters to run
 
-    rc_period: int
-        The length of the simulation run that collects results
-
-    warm_up: int, optional (default=0)
-        warm-up period in the model.  The model will not collect any results
-        before the warm-up period is reached.
-
     random_no_set: int or None, optional (default=1)
         Controls the set of random seeds used by the stochastic parts of the
         model.  Set to different ints to get different results.  Set to None
@@ -390,7 +403,7 @@ def single_run(scenario,
     Returns:
     --------
         pandas.DataFrame:
-        results from single run.
+          results from single run.
     """
 
     # set random number set - this controls sampling for the run.
@@ -417,23 +430,13 @@ def multiple_replications(scenario,
     scenario: Scenario
         Parameters/arguments to configure  the model
 
-    rc_period: float, optional (default=DEFAULT_RESULTS_COLLECTION_PERIOD)
-        results collection period.
-        the number of minutes to run the model beyond warm up
-        to collect results
-
-    warm_up: float, optional (default=0)
-        initial transient period.  no results are collected in this period
-
-    n_reps: int, optional (default=DEFAULT_N_REPS)
-        Number of independent replications to run.
-
     n_jobs, int, optional (default=-1)
         No. replications to run in parallel.
 
     Returns:
     --------
-    List
+    df_results: pandas.DataFrame
+      performance metrics per replication
     """
     res = Parallel(n_jobs=n_jobs)(delayed(single_run)(scenario,
                                                       random_no_set=rep)
@@ -451,10 +454,9 @@ class WarmupAuditor:
     Warmup Auditor for the model.
 
     Stores the cumulative means for:
-    1. operator waiting time
-    2. nurse waiting time
-    3. operator utilisation
-    4. nurse utilisation.
+    1. percentage of patients being admitted
+       to hospital within 4-hour
+    2. bed utilisation
     """
 
     def __init__(self, model):
@@ -468,16 +470,6 @@ class WarmupAuditor:
     def run(self):
         """
         Run the audited model
-
-        Parameters:
-        ----------
-        rc_period: float
-            Results collection period. Typically, this should be many times
-            longer than the expected results collection period.
-
-        Returns:
-        -------
-        None.
         """
         # set up data collection for warmup variables.
         self.env.process(self.audit_model())
@@ -507,7 +499,7 @@ class WarmupAuditor:
 
         Returns:
         -------
-        pd.DataFrame
+        df: pd.DataFrame
         """
 
         df = pd.DataFrame([self.beds_util,
@@ -529,17 +521,10 @@ def warmup_single_run(scenario,
     scenario: Scenario object
         The scenario/parameters to run
 
-    results_collection_period: int
-        The length of the simulation run that collects results
-
-    audit_interval: int, optional (default=60)
-        during between audits as the model runs.
-
     Returns:
     --------
         Tuple:
-        (mean_time_in_system, mean_time_to_nurse, mean_time_to_triage,
-         four_hours)
+        (bed_util, percentage)
     """
     # set random number set - this controls sampling for the run.
     scenario.set_random_no_set(random_no_set)
@@ -565,22 +550,14 @@ def warmup_analysis(scenario,
     of the following metrics:
 
     metrics included:
-    1. Operator waiting time
-    2. Nurse callback waiting time
-    3. Operator utilisation
-    4. Nurse utilisation
+    1. percentage of patients being admitted
+       to hospital within 4-hour
+    2. Bed utilisation
 
     Params:
     ------
     scenario: Scenario
         Parameters/arguments to configure the model
-
-    rc_period: int
-        number of minutes to run the model in simulated time
-
-    n_reps: int, optional (default=5)
-        Number of independent replications to run.
-
     n_jobs: int, optional (default=-1)
         Number of processors for parallel running of replications
 
@@ -629,6 +606,13 @@ def get_scenarios(n_beds, admission_increase):
     Creates a dictionary object containing
     objects of type `Scenario` to run.
 
+    Params:
+    --------
+    n_beds: range or int
+      number of beds in the ACU
+    admission_increase: range or int
+      x% increase in patients requiring an admission
+
     Returns:
     --------
     dict
@@ -676,7 +660,7 @@ def scenario_summary_frame(scenario_results):
 
     Returns:
     -------
-    pd.DataFrame
+    summary: pd.DataFrame
     """
     columns = []
     summary = pd.DataFrame()
