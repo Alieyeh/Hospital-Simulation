@@ -504,7 +504,7 @@ class WarmupAuditor:
 
         df = pd.DataFrame([self.beds_util,
                            self.percentage]).T
-        df.columns = ['beds_wait', 'beds_util', 'percentage']
+        df.columns = ['beds_util', 'percentage']
 
         return df
 
