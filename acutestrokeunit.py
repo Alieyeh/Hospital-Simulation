@@ -255,7 +255,6 @@ class AcuteStrokeUnit:
         """
         args.beds = simpy.PriorityResource(self.env, capacity=args.n_beds)
 
-
     def run(self):
         """
         Conduct a single run of the model in its current
@@ -339,12 +338,11 @@ class AcuteStrokeUnit:
         util = np.sum(raw_df['stay_in_hospital']) / (rc_period * self.args.n_beds)
         ratio = np.mean(raw_df['four_hour_target'])
 
-        df = pd.DataFrame({'1': {# 'beds_queue': self.operator_queue,
-                                 'beds_util': util,
+        df = pd.DataFrame({'1': {'beds_util': util,
                                  'percentage': ratio}})
-        df = df.T
-        df.index.name = 'rep'
-        return df
+        sum_df = df.T
+        sum_df.index.name = 'rep'
+        return raw_df, sum_df
 
 
 def single_run(scenario,
@@ -385,9 +383,9 @@ def single_run(scenario,
     model.run()
 
     # run the model
-    results_summary = model.run_summary_frame()
+    raw_df, results_summary = model.run_summary_frame()
 
-    return results_summary
+    return raw_df, results_summary
 
 
 def multiple_replications(scenario,

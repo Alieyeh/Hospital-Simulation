@@ -12,7 +12,7 @@ from paramdetection import confidence_interval_method, plot_confidence_interval_
 
 # Turn on tracing
 acutestrokeunit.DEFAULT_RESULTS_COLLECTION_PERIOD = 365
-acutestrokeunit.TRACE = True
+acutestrokeunit.TRACE = False
 acutestrokeunit.DEFAULT_WARMUP = 250
 acutestrokeunit.DEFAULT_N_REPS = 50
 acutestrokeunit.N_BEDS = 9
@@ -26,12 +26,12 @@ default_args = Scenario()
 # set up the process
 # model.run()
 # results = model.run_summary_frame()
-# results = single_run(default_args)
+results = single_run(default_args)
 # results.to_csv("test.csv")
-# print(results)
+print(results)
 # print(re)
-results = multiple_replications(default_args)
-print(np.mean(results, axis=0))
+# results = multiple_replications(default_args)
+# print(np.mean(results, axis=0))
 # print(results['time_to_beds'].mean(axis=1))
 # time_series_inspection(results, warm_up=120)
 
