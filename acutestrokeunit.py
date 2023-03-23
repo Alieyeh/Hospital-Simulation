@@ -1,3 +1,15 @@
+"""
+An acute stroke unit model .
+
+Main model class: AcuteStrokeUnit
+Patient process class: Patient
+
+Process overview:
+1. Patient arrive at acute stroke unit (ACU) and
+   waits for a bed for further treatment
+2. Patient stays in the hospital for a few days and discharge
+"""
+
 import numpy as np
 import pandas as pd
 import itertools
@@ -28,10 +40,6 @@ TRACE = False
 # default random number SET
 DEFAULT_RNG_SET = 1234
 N_STREAMS = 6
-
-# scheduled audit intervals in minutes.
-# AUDIT_FIRST_OBS = 10
-# AUDIT_OBS_INTERVAL = 5
 
 # default results collection period
 DEFAULT_RESULTS_COLLECTION_PERIOD = 365*5
@@ -146,8 +154,8 @@ class Patient:
         identifier: int
             a numeric identifier for the patient.
 
-        type: int
-            stroke type
+        stroke_type: int
+            stroke type (1-Acute strokes, 2-TIA, 3-Complex Neurological)
 
         env: simpy.Environment
             the simulation environment
@@ -187,21 +195,23 @@ class Patient:
         # record the time that patient entered the system
         self.arrival_time = self.env.now
 
-        # request a bed
+        # allocate beds based on priority type or not
         pri = None
         if self.args.prior:
             pri = self.type
 
+        # request a bed
         with self.beds.request(priority=pri) as req:
             yield req
 
-            # time to bed
+            # calculate waiting time to bed
             self.time_to_bed = self.env.now - self.arrival_time
+            # calculate if meets the 4-hour target
             if 0 <= self.time_to_bed <= 1/6:
                 self.four_hour_target = 1
             self.waiting_complete()
 
-            # sample stay duration.
+            # sampling stay in hospital duration.
             if self.type == 1:
                 self.stay_duration = self.stay_dist1.sample()
             elif self.type == 2:
@@ -214,10 +224,16 @@ class Patient:
             self.treatment_complete()
 
     def waiting_complete(self):
+        """
+        Printing information for time to bed
+        """
         trace(f'2. patient {self.identifier}, type {self.type} waiting for bed ended {self.env.now:.3f}; '
               + f'waiting time was {self.time_to_bed:.3f}')
 
     def treatment_complete(self):
+        """
+        Printing information when discharging the hospital
+        """
         trace(f'3. patient {self.identifier}, type {self.type} staying in hospital ended {self.env.now:.3f}; '
               + f'stay length was {self.stay_duration:.3f}')
 
@@ -315,7 +331,7 @@ class AcuteStrokeUnit:
             yield self.env.timeout(inter_arrival_time)
             self.generate_new_arrival(patient_type)
 
-    def run_summary_frame(self):
+    def raw_summary(self):
 
         # append to results df
         pc = [i for i in range(1, self.patient_count+1)]
@@ -332,7 +348,10 @@ class AcuteStrokeUnit:
                                'stay_in_hospital': st,
                                'four_hour_target': ft})
         raw_df = raw_df[raw_df['arrival_time'] >= self.args.warm_up]
+        return raw_df
 
+    def run_summary_frame(self):
+        raw_df = self.raw_summary()
         # adjust util calculations for warmup period
         rc_period = self.env.now - self.args.warm_up
         util = np.sum(raw_df['stay_in_hospital']) / (rc_period * self.args.n_beds)
@@ -342,7 +361,7 @@ class AcuteStrokeUnit:
                                  'percentage': ratio}})
         sum_df = df.T
         sum_df.index.name = 'rep'
-        return raw_df, sum_df
+        return sum_df
 
 
 def single_run(scenario,
@@ -383,9 +402,9 @@ def single_run(scenario,
     model.run()
 
     # run the model
-    raw_df, results_summary = model.run_summary_frame()
+    results_summary = model.run_summary_frame()
 
-    return raw_df, results_summary
+    return results_summary
 
 
 def multiple_replications(scenario,
