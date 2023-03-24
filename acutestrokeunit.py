@@ -15,7 +15,7 @@ import pandas as pd
 import itertools
 import simpy
 from joblib import Parallel, delayed
-from distributions import (Exponential, Lognormal)
+from Hospital.distributions import (Exponential, Lognormal)
 
 # declare constants for module
 # default bed resources
