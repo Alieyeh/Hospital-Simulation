@@ -47,7 +47,7 @@ def randomization_test(results):
     results: pd.Dataframe
         The dataframe of results taken from warmup_analysis
     """
-    warnup_period = []
+    warmup_period = []
     for col in results:
         rep_mean = list(results[col].mean(axis=1))
         temp = [rep_mean]
@@ -68,10 +68,10 @@ def randomization_test(results):
 
             if p >= 0.05:
                 break
-        warnup_period.append(batch)
+        warmup_period.append(batch)
         print(f"The warmup period for {col} is {batch}")
 
-    return warnup_period
+    return warmup_period
 
 
 def confidence_interval_method(replications, alpha=0.05, desired_precision=0.05,
