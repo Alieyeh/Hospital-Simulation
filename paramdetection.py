@@ -56,6 +56,8 @@ def randomization_test(results):
             temp.append(rand)
 
         for batch in range(1, 51):
+            if batch % 10 == 0:
+                print(".", end=" ")
             arr1 = np.mean(np.array(temp)[:, :batch], axis=1)
             arr2 = np.mean(np.array(temp)[:, batch:], axis=1)
             diff = arr2 - arr1

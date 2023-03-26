@@ -3,7 +3,8 @@ import random
 import pandas as pd
 import acutestrokeunit
 from acutestrokeunit import AcuteStrokeUnit, multiple_replications, Scenario, warmup_analysis, single_run, \
-    run_scenario_analysis, get_scenarios, scenario_summary_frame
+    run_scenario_analysis, get_scenarios, scenario_summary_frame, sensitivity_scenarios,\
+    sensitivity_summary_frame, plot_tornado
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -26,13 +27,13 @@ default_args = Scenario()
 # set up the process
 # model.run()
 # results = model.run_summary_frame()
-results = single_run(default_args)
+# results = single_run(default_args)
 # results.to_csv("test.csv")
-print(results)
+# print(results)
 # print(re)
 # results = multiple_replications(default_args)
 # print(np.mean(results, axis=0))
-# print(results['time_to_beds'].mean(axis=1))
+# print(results)
 # time_series_inspection(results, warm_up=120)
 
 # print(f'end of run. simulation clock time = {env.now}')
@@ -76,3 +77,33 @@ print(results)
 # scenario_results = run_scenario_analysis(scenarios)
 # summary_frame = scenario_summary_frame(scenario_results)
 # summary_frame.round(2).to_csv("test.csv")
+
+# one-way sensitivity analysis
+# one-way sensitivity for beds
+sensitivity = sensitivity_scenarios(n_beds=range(5, 15))
+sensitivity_bed = sensitivity_summary_frame(run_scenario_analysis(sensitivity))
+
+# one way sensitivity for admission
+sensitivity = sensitivity_scenarios(admission_increase=[-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2])
+sensitivity_admission = sensitivity_summary_frame(run_scenario_analysis(sensitivity))
+
+# one way sensitivity for admission
+sensitivity = sensitivity_scenarios(stay_length_increase=[-0.2, -0.15, -0.1, -0.05, 0, 0.05, 0.1, 0.15, 0.2])
+sensitivity_stay = sensitivity_summary_frame(run_scenario_analysis(sensitivity))
+
+# one way sensitivity for prior
+sensitivity = sensitivity_scenarios(priority=1)
+sensitivity_prior = sensitivity_summary_frame(run_scenario_analysis(sensitivity))
+
+results = {"Beds number \n(5 to 14 beds)": sensitivity_bed,
+           "Arrival of admissions \n(base case x0.8 to x 1.2)": sensitivity_admission,
+           "Stay length in hospital \n(base case x0.8 to x 1.2)": sensitivity_stay,
+           "Admitted per priority": sensitivity_prior}
+
+# print(np.array(list(results.values()))[:, 0])
+plot_tornado(results)
+plt.show()
+
+
+
+

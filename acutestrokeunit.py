@@ -16,6 +16,7 @@ import itertools
 import simpy
 from joblib import Parallel, delayed
 from Hospital.distributions import (Exponential, Lognormal)
+import matplotlib.pyplot as plt
 
 # declare constants for module
 # default bed resources
@@ -97,11 +98,22 @@ class Scenario:
         self.mean_iat2 = MEAN_IAT2
         self.mean_iat3 = MEAN_IAT3
 
+        # stay in hospital
+        self.mean_stay1 = MEAN_STAY1
+        self.std_stay1 = STD_STAY1
+        self.mean_stay2 = MEAN_STAY2
+        self.std_stay2 = STD_STAY2
+        self.mean_stay3 = MEAN_STAY3
+        self.std_stay3 = STD_STAY3
+
         # warm-up
         self.warm_up = DEFAULT_WARMUP
 
         # run length
         self.run_length = DEFAULT_RESULTS_COLLECTION_PERIOD
+
+        # treat patients base on priority?
+        self.prior = PRIORITY
 
         # sampling
         self.random_number_set = random_number_set
@@ -650,7 +662,7 @@ def run_scenario_analysis(scenarios):
 
 def scenario_summary_frame(scenario_results):
     """
-    Mean results for each performance measure by scenario
+    Mean, 95%CI results for each performance measure by scenario
 
     Parameters:
     ----------
@@ -685,3 +697,106 @@ def scenario_summary_frame(scenario_results):
 
     summary.columns = columns
     return summary
+
+
+def sensitivity_scenarios(n_beds=None, admission_increase=None,
+                          stay_length_increase=None, priority=None):
+    scenarios = {}
+
+    if n_beds is not None:
+        for n in n_beds:
+            scenarios[f'bed_{n}'] = Scenario()
+            scenarios[f'bed_{n}'].n_beds = n
+
+    if admission_increase is not None:
+        for rate in admission_increase:
+            scenarios[f'{rate * 100}% change in admission'] = Scenario()
+            scenarios[f'{rate * 100}% change in admission'].mean_iat1 /= (1 + rate)
+            scenarios[f'{rate * 100}% change in admission'].mean_iat2 /= (1 + rate)
+            scenarios[f'{rate * 100}% change in admission'].mean_iat3 /= (1 + rate)
+
+    if stay_length_increase is not None:
+        for p in stay_length_increase:
+            scenarios[f'{p * 100}% in stay in hospital length'] = Scenario()
+            scenarios[f'{p * 100}% in stay in hospital length'].mean_stay1 /= (1 + p)
+            scenarios[f'{p * 100}% in stay in hospital length'].std_stay1 /= (1 + p)
+            scenarios[f'{p * 100}% in stay in hospital length'].mean_stay2 /= (1 + p)
+            scenarios[f'{p * 100}% in stay in hospital length'].std_stay2 /= (1 + p)
+            scenarios[f'{p * 100}% in stay in hospital length'].mean_stay3 /= (1 + p)
+            scenarios[f'{p * 100}% in stay in hospital length'].std_stay3 /= (1 + p)
+
+    if priority is not None:
+        if priority:
+            scenarios[f'turn on priority'] = Scenario()
+            scenarios[f'turn on priority'].prior = True
+
+    return scenarios
+
+
+def sensitivity_summary_frame(sensitivity_results):
+    """
+    Min & Max results for each performance measure by scenario
+
+    Parameters:
+    ----------
+    sensitivity_results: dict
+        dictionary of replications.
+        Key identifies the performance measure
+
+    Returns:
+    -------
+    summary: pd.DataFrame
+    """
+    summary = pd.DataFrame()
+    for sc_name, replications in sensitivity_results.items():
+        # calculate max & min
+        maxi = replications.max()
+        mini = replications.min()
+
+        maxi = maxi.add_prefix("max_")
+        mini = mini.add_prefix("min_")
+
+        # combine them into one dataframe
+        stats = pd.concat([maxi, mini], axis=0)
+        summary = pd.concat([summary, stats], axis=1)
+
+    df = pd.concat([summary.min(axis=1).iloc[2:4].reset_index(drop=True),
+                    summary.max(axis=1).iloc[0:2].reset_index(drop=True)],
+                   axis=1)
+    df.index = ["beds_util", "percentage"]
+    df.columns = ["min", "max"]
+    df["width"] = df["max"] - df["min"]
+
+    return df
+
+
+def plot_tornado(results):
+    """
+    Parameters
+    ----------
+    results : dict
+        A mapping from question labels to a list of answers per category.
+        It is assumed all lists contain the same number of entries and that
+        it matches the length of *category_names*.'
+    """
+    # get base scenario
+    args = Scenario()
+    base = multiple_replications(args)
+    base_value = np.mean(base, axis=0)
+
+    labels = list(results.keys())
+    x_text = ["bed utilisation", "percentage of patients being admitted within 4 hrs"]
+    fig, ax = plt.subplots(2, 1, figsize=(12, 8))
+
+    for i in [0, 1]:
+        data = np.array(list(results.values()))[:, i]
+        # Plot Bars
+        ax[i].barh(labels, width=data[:, 2], left=data[:, 0], height=0.5)
+        # Add Zero Reference Line
+        ax[i].axvline(base_value[i], linestyle='--', color='black', label="base")
+        # X Axis
+        ax[i].set_xlim(0, 1)
+        ax[i].set_xlabel(x_text[i])
+    fig.tight_layout()
+
+    return fig, ax
