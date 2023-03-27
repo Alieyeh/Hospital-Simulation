@@ -4,9 +4,9 @@ replication number.
 
 Includes:
 warmup_detection: graphical method for defining
-                  warmup period
+                  the warmup period
 randomization_test: statistical method for defining
-                    warmup period
+                    the warmup period
 confidence_interval_method: statistical method for
                             defining replication numer
 plot_confidence_interval_method: plot the results for
