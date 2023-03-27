@@ -336,7 +336,7 @@ class AcuteStrokeUnit:
 
     def type3(self):
         """
-        Patient with type2 stroke (Complex Neurological),
+        Patient with type3 stroke (Complex Neurological),
         IAT is exponentially distributed
         """
         while True:
@@ -377,7 +377,9 @@ class AcuteStrokeUnit:
     def run_summary_frame(self):
         """
         Store summary performance data
-        including beds_util and percentage.
+        including beds_util and percentage
+        (pts being admitted to hospital
+        within 4hrs).
 
         Returns:
         --------
@@ -620,14 +622,14 @@ def get_scenarios(n_beds, admission_increase):
 
     Params:
     --------
-    n_beds: range or int
+    n_beds: range
       number of beds in the ACU
-    admission_increase: range or int
+    admission_increase: range
       x% increase in patients requiring an admission
 
     Returns:
     --------
-    dict
+    dict:
         Contains the scenarios for the model
     """
     scenarios = {'base': Scenario()}
@@ -701,6 +703,27 @@ def scenario_summary_frame(scenario_results):
 
 def sensitivity_scenarios(n_beds=None, admission_increase=None,
                           stay_length_increase=None, priority=None):
+    """
+        Creates a dictionary object containing
+        objects of type `Scenario` for
+        sensitivity analysis to run.
+
+        Params:
+        --------
+        n_beds: range
+          number of beds in the ACU
+        admission_increase: range
+          x% increase in patients requiring an admission
+        stay_length_increase: range
+          x% increase in patients staying in the hospital
+        priority: bool
+          treat patients based on type of disease (priority)
+
+        Returns:
+        --------
+        dict:
+            Contains the scenarios for the model
+        """
     scenarios = {}
 
     if n_beds is not None:
@@ -772,12 +795,16 @@ def sensitivity_summary_frame(sensitivity_results):
 
 def plot_tornado(results):
     """
+    Plotting tornado graph for sensitivity analysis
+
     Parameters
     ----------
     results : dict
-        A mapping from question labels to a list of answers per category.
-        It is assumed all lists contain the same number of entries and that
-        it matches the length of *category_names*.'
+        summary table from sensitivity_summary_frame()
+
+    Returns
+    ----------
+    ax, fig
     """
     # get base scenario
     args = Scenario()

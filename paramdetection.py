@@ -1,5 +1,16 @@
 """
-xxxxxx
+Functions for detecting parameter for warmup period,
+replication number.
+
+Includes:
+warmup_detection: graphical method for defining
+                  warmup period
+randomization_test: statistical method for defining
+                    warmup period
+confidence_interval_method: statistical method for
+                            defining replication numer
+plot_confidence_interval_method: plot the results for
+                                 confidence_interval_method
 """
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,7 +30,7 @@ def warmup_detection(results, warm_up=None):
     results: dict
         The dict of results taken from warmup_analysis
     """
-    # create the 4 chart areas to plot
+    # create the 2 chart areas to plot
     fig, ax = plt.subplots(1, 2, figsize=(12, 9))
 
     # take the mean of the columns for each metric and plot
@@ -48,13 +59,19 @@ def randomization_test(results):
         The dataframe of results taken from warmup_analysis
     """
     warmup_period = []
+    # iterate through two outcome (bed_util & percentage)
     for col in results:
+        # calculate replication mean
         rep_mean = list(results[col].mean(axis=1))
         temp = [rep_mean]
+
+        # randomization samples
         for n_rand in range(10000):
             rand = random.sample(rep_mean, len(rep_mean))
             temp.append(rand)
 
+        # compare first x samples with others
+        batch = 1
         for batch in range(1, 51):
             if batch % 10 == 0:
                 print(".", end=" ")
