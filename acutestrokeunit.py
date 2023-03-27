@@ -7,7 +7,7 @@ Patient process class: Patient
 Process overview:
 1. Patients arrive at acute stroke unit (ACU) and
    waits for a bed for further treatment
-2. Patient stay in the hospital for a few days and discharge
+2. Patients stay in the hospital for a few days and discharge
 """
 
 import numpy as np
