@@ -4,7 +4,7 @@ This discrete-event simulation is designed with simpy to help NHS plan the futur
 
 - The code in Hospital folder focuses on acute stroke unit simulation model, including  different classes and helpful functions.
 - The Interactive_Simulation.py and code in pages folder focuses on the Streamlit deployment of the model.
-- group_2_report.ipynb is provided to document and communicate the model and analyses to a team of NHS analysts.
+- report.ipynb is provided to document and communicate the model and analyses to a team of NHS analysts.
 - verification.ipynb is used to check the model performs as expected.
 
 ## Libraries used
