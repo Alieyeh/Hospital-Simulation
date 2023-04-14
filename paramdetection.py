@@ -30,18 +30,16 @@ def warmup_detection(results, warm_up=None):
     results: dict
         The dict of results taken from warmup_analysis
     """
-    # create the 4 chart areas to plot
-    fig, ax = plt.subplots(1, 2, figsize=(9, 4.5))
+    # create the 2 chart areas to plot
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
 
     # take the mean of the columns for each metric and plot
     ax[0].plot(results['percentage'].mean(axis=1))
     ax[1].plot(results['beds_util'].mean(axis=1))
 
     # set the label of each chart
-    ax[0].set_ylabel('beds wait within 4 hours')
-    ax[0].set_xlabel('wait time')
+    ax[0].set_ylabel('bed wait within 4 hours')
     ax[1].set_ylabel('bed utilization')
-    ax[1].set_xlabel('wait time')
 
     if warm_up is not None:
         # add warmup cut-off vertical line if one is specified
@@ -67,13 +65,12 @@ def randomization_test(results):
         # calculate replication mean
         rep_mean = list(results[col].mean(axis=1))
         temp = [rep_mean]
-
+        
         # randomization samples
         for n_rand in range(10000):
             rand = random.sample(rep_mean, len(rep_mean))
             temp.append(rand)
 
-        print(".", end=' ')
         # compare first x samples with others
         batch = 1
         for batch in range(1, 51):
@@ -91,8 +88,8 @@ def randomization_test(results):
 
             if p >= 0.05:
                 break
-        print(".")
         
+        print(".")
         warmup_period.append(batch)
         metric = ''
         if str(col) == "beds_util":
@@ -100,6 +97,7 @@ def randomization_test(results):
         else:
             metric = "admittance within 4 hours of arrival"
         print(f"The warmup period for {metric} is {batch}")
+
     return warmup_period
 
 
@@ -216,7 +214,7 @@ def plot_confidence_interval_method(n_reps, conf_ints, metric_name):
     -------
         matplotlib.pyplot.axis
     """
-        # plot cumulative mean + lower/upper intervals
+    # plot cumulative mean + lower/upper intervals
     ax = sns.lineplot(x=conf_ints.index, y='Cumulative Mean', data=conf_ints)
     ax.fill_between(conf_ints.index, conf_ints['Lower Interval'], conf_ints['Upper Interval'], alpha=0.2)
     # add the
